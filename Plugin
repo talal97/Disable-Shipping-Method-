@@ -1,0 +1,159 @@
+<?php
+/**
+ * Plugin Name: Disable Shipping Method Based on Time of Day
+ * Description: Disable a specific shipping method instance during specified hours.
+ * Version: 1.3
+ * Author: Fastly Cart
+ * Text Domain: disable-shipping-method
+ */
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+// Add settings link on the plugin page
+add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'dsm_add_settings_link');
+function dsm_add_settings_link($links) {
+    $settings_link = '<a href="admin.php?page=dsm-settings">' . __('Settings') . '</a>';
+    array_push($links, $settings_link);
+    return $links;
+}
+
+// Add admin menu
+add_action('admin_menu', 'dsm_admin_menu');
+function dsm_admin_menu() {
+    add_menu_page(
+        'Disable Shipping Method Settings',
+        'Disable Shipping Method',
+        'manage_options',
+        'dsm-settings',
+        'dsm_settings_page'
+    );
+}
+
+// Settings page
+function dsm_settings_page() {
+    ?>
+    <div class="wrap">
+        <h1>Disable Shipping Method Settings</h1>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('dsm_settings_group');
+            do_settings_sections('dsm-settings');
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
+
+// Register settings
+add_action('admin_init', 'dsm_register_settings');
+function dsm_register_settings() {
+    register_setting('dsm_settings_group', 'dsm_shipping_method_instance_id');
+    register_setting('dsm_settings_group', 'dsm_deactivate_time');
+    register_setting('dsm_settings_group', 'dsm_activate_time');
+
+    add_settings_section('dsm_settings_section', 'Settings', null, 'dsm-settings');
+
+    add_settings_field('dsm_shipping_method_instance_id', 'Shipping Method Instance', 'dsm_shipping_method_instance_id_field', 'dsm-settings', 'dsm_settings_section');
+    add_settings_field('dsm_deactivate_time', 'Deactivate Time (HH:MM)', 'dsm_deactivate_time_field', 'dsm-settings', 'dsm_settings_section');
+    add_settings_field('dsm_activate_time', 'Activate Time (HH:MM)', 'dsm_activate_time_field', 'dsm-settings', 'dsm_settings_section');
+}
+
+function dsm_shipping_method_instance_id_field() {
+    $shipping_method_instance_id = get_option('dsm_shipping_method_instance_id', '');
+
+    // Get all shipping zones
+    $zones = WC_Shipping_Zones::get_zones();
+    $zones[] = array('id' => 0); // Add a fake zone for non-assigned methods
+
+    echo '<select name="dsm_shipping_method_instance_id">';
+    echo '<option value="">' . __('Select a shipping method', 'disable-shipping-method') . '</option>';
+
+    foreach ($zones as $zone) {
+        $zone_id = $zone['id'];
+        $shipping_methods = WC_Shipping_Zones::get_zone($zone_id)->get_shipping_methods();
+        
+        foreach ($shipping_methods as $shipping_method) {
+            $instance_id = $shipping_method->get_instance_id();
+            $method_title = $shipping_method->get_title() . ' (' . $shipping_method->get_method_title() . ') - Zone: ' . $zone_id;
+            $selected = selected($shipping_method_instance_id, $instance_id, false);
+            echo '<option value="' . esc_attr($instance_id) . '" ' . $selected . '>' . esc_html($method_title) . '</option>';
+        }
+    }
+
+    echo '</select>';
+}
+
+function dsm_deactivate_time_field() {
+    $deactivate_time = get_option('dsm_deactivate_time', '');
+    echo '<input type="time" name="dsm_deactivate_time" value="' . esc_attr($deactivate_time) . '" />';
+}
+
+function dsm_activate_time_field() {
+    $activate_time = get_option('dsm_activate_time', '');
+    echo '<input type="time" name="dsm_activate_time" value="' . esc_attr($activate_time) . '" />';
+}
+
+// Disable selected shipping method instance during specified hours
+add_filter('woocommerce_package_rates', 'dsm_disable_shipping_method_instance', 10, 2);
+function dsm_disable_shipping_method_instance($rates, $package) {
+    $shipping_method_instance_id = get_option('dsm_shipping_method_instance_id', '');
+    $deactivate_time = get_option('dsm_deactivate_time', '');
+    $activate_time = get_option('dsm_activate_time', '');
+
+    if ($shipping_method_instance_id && $deactivate_time && $activate_time) {
+        $current_time = current_time('H:i');
+
+        if ($deactivate_time < $activate_time) {
+            if ($current_time >= $deactivate_time && $current_time < $activate_time) {
+                foreach ($rates as $rate_id => $rate) {
+                    if ($rate->get_instance_id() == $shipping_method_instance_id) {
+                        unset($rates[$rate_id]);
+                    }
+                }
+            }
+        } else {
+            if ($current_time >= $deactivate_time || $current_time < $activate_time) {
+                foreach ($rates as $rate_id => $rate) {
+                    if ($rate->get_instance_id() == $shipping_method_instance_id) {
+                        unset($rates[$rate_id]);
+                    }
+                }
+            }
+        }
+    }
+
+    return $rates;
+}
+
+// Add inline JavaScript for refreshing shipping methods
+add_action('admin_footer', 'dsm_inline_refresh_script');
+function dsm_inline_refresh_script() {
+    ?>
+    <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            function refreshShippingMethods() {
+                var currentTime = new Date();
+                var currentHours = currentTime.getHours().toString().padStart(2, '0');
+                var currentMinutes = currentTime.getMinutes().toString().padStart(2, '0');
+                var currentFormattedTime = currentHours + ':' + currentMinutes;
+
+                if ((<?php echo json_encode(get_option('dsm_deactivate_time')); ?> < <?php echo json_encode(get_option('dsm_activate_time')); ?> && currentFormattedTime >= <?php echo json_encode(get_option('dsm_deactivate_time')); ?> && currentFormattedTime < <?php echo json_encode(get_option('dsm_activate_time')); ?>) ||
+                    (<?php echo json_encode(get_option('dsm_deactivate_time')); ?> > <?php echo json_encode(get_option('dsm_activate_time')); ?> && (currentFormattedTime >= <?php echo json_encode(get_option('dsm_deactivate_time')); ?> || currentFormattedTime < <?php echo json_encode(get_option('dsm_activate_time')); ?>))) {
+                    // Force refresh of the shipping methods
+                    $('body').trigger('update_checkout');
+                }
+            }
+
+            // Check every minute
+            setInterval(refreshShippingMethods, 60000);
+
+            // Initial check
+            refreshShippingMethods();
+        });
+    </script>
+    <?php
+}
