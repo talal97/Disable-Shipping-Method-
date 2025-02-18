@@ -35,16 +35,56 @@ function dsm_admin_menu() {
 // Settings page
 function dsm_settings_page() {
     ?>
-    <div class="wrap">
+    <div class="wrap dsm-settings-wrap">
         <h1>Disable Shipping Method Settings</h1>
-        <form method="post" action="options.php">
-            <?php
-            settings_fields('dsm_settings_group');
-            do_settings_sections('dsm-settings');
-            submit_button();
-            ?>
-        </form>
+        <div class="dsm-settings-container">
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('dsm_settings_group');
+                ?>
+                <div class="dsm-settings-section">
+                    <?php do_settings_sections('dsm-settings'); ?>
+                </div>
+                <?php submit_button('Save Changes', 'primary', 'submit', true, array('id' => 'dsm-submit')); ?>
+            </form>
+        </div>
     </div>
+    <style>
+        .dsm-settings-wrap {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .dsm-settings-container {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 25px;
+            margin-top: 20px;
+        }
+        .dsm-settings-section {
+            margin-bottom: 30px;
+        }
+        .form-table th {
+            padding: 20px 10px 20px 0;
+            width: 200px;
+            font-weight: 600;
+        }
+        .form-table td {
+            padding: 15px 10px;
+        }
+        select, input[type="time"] {
+            min-width: 200px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #dsm-submit {
+            padding: 8px 20px;
+            height: auto;
+            font-size: 14px;
+        }
+    </style>
     <?php
 }
 
